@@ -12,21 +12,24 @@ const session = require("express-session");
 const app = express();
 const PORT = 3001;
 
-// Middleware
-const cors = require("cors");
-
+// CORS Configuration - Fixed
 app.use(
   cors({
     origin: [
       "http://localhost:5173",
       "http://localhost:3000",
-      "https://email-sender-mocha-mu.vercel.app", // Remove trailing slash
+      "https://email-sender-mocha-mu.vercel.app",
     ],
-    methods: ["GET", "POST", "OPTIONS"], // Explicitly allow methods
-    allowedHeaders: ["Content-Type", "Authorization"], // Allow common headers
-    credentials: true, // Allow cookies and credentials
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+    credentials: true,
   })
 );
+
+// Handle preflight requests
+app.options("*", cors());
+
+// Middleware
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 app.use(
@@ -105,7 +108,7 @@ app.post("/api/login", async (req, res) => {
 
   try {
     await tempTransporter.verify();
-    req.session.user = { email, password }; // Store credentials in session
+    req.session.user = { email, password };
     res.json({ success: true, message: "تسجيل الدخول ناجح" });
   } catch (error) {
     console.error("Login error:", error);
@@ -140,7 +143,7 @@ const storage = multer.diskStorage({
 const upload = multer({
   storage,
   limits: {
-    fileSize: 50 * 1024 * 1024, // 50MB
+    fileSize: 50 * 1024 * 1024,
   },
   fileFilter: (req, file, cb) => {
     const allowedTypes = [
@@ -192,7 +195,6 @@ const parseFile = async (filePath, fileExtension) => {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
     if (fileExtension === '.csv') {
-      // Parse CSV
       const parser = fs
         .createReadStream(filePath)
         .pipe(parse({ delimiter: ',', columns: true, trim: true }));
@@ -205,7 +207,6 @@ const parseFile = async (filePath, fileExtension) => {
         });
       }
     } else {
-      // Parse Excel
       const workbook = XLSX.readFile(filePath);
       workbook.SheetNames.forEach((sheetName) => {
         const worksheet = workbook.Sheets[sheetName];
@@ -672,7 +673,7 @@ app.post("/api/clear-data", requireAuth, (req, res) => {
 // Clean up old files periodically
 const cleanupOldFiles = () => {
   const directories = [uploadsDir, tempDir];
-  const maxAge = 24 * 60 * 60 * 1000; // 24 hours
+  const maxAge = 24 * 60 * 60 * 1000;
 
   directories.forEach((dir) => {
     try {
