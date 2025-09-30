@@ -13,10 +13,18 @@ const app = express();
 const PORT = 3001;
 
 // Middleware
+const cors = require("cors");
+
 app.use(
   cors({
-    origin: ["http://localhost:5173", "http://localhost:3000", "https://email-sender-mocha-mu.vercel.app/"],
-    credentials: true,
+    origin: [
+      "http://localhost:5173",
+      "http://localhost:3000",
+      "https://email-sender-mocha-mu.vercel.app", // Remove trailing slash
+    ],
+    methods: ["GET", "POST", "OPTIONS"], // Explicitly allow methods
+    allowedHeaders: ["Content-Type", "Authorization"], // Allow common headers
+    credentials: true, // Allow cookies and credentials
   })
 );
 app.use(express.json({ limit: "50mb" }));
