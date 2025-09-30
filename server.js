@@ -1,18 +1,16 @@
 const express = require("express");
 const cors = require("cors");
-const multer = require("multer");
 const nodemailer = require("nodemailer");
 const XLSX = require("xlsx");
 const { parse } = require("csv-parse");
 const path = require("path");
 const fs = require("fs");
 const fileUpload = require("express-fileupload");
-const session = require("express-session");
 
 const app = express();
-const PORT = 3001;
+const PORT = process.env.PORT || 3001;
 
-// CORS Configuration - Fixed
+// CORS Configuration
 app.use(
   cors({
     origin: [
@@ -21,7 +19,7 @@ app.use(
       "https://email-sender-mocha-mu.vercel.app",
     ],
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
+    allowedHeaders: ["Content-Type", "X-Email", "X-Password"],
     credentials: true,
   })
 );
@@ -36,15 +34,7 @@ app.use(
   fileUpload({
     limits: { fileSize: 50 * 1024 * 1024 }, // 50MB max file size
     useTempFiles: true,
-    tempFileDir: "/tmp/",
-  })
-);
-app.use(
-  session({
-    secret: "your-secret-key",
-    resave: false,
-    saveUninitialized: false,
-    cookie: { maxAge: 24 * 60 * 60 * 1000 }, // 24 hours
+    tempFileDir: process.env.TEMP_DIR || "/tmp/",
   })
 );
 
@@ -58,15 +48,15 @@ const tempDir = path.join(__dirname, "temp");
 });
 
 // Persistent data storage
-const DATA_FILE = path.join(__dirname, 'data.json');
+const DATA_FILE = path.join(__dirname, "data.json");
 
 function loadData() {
   if (fs.existsSync(DATA_FILE)) {
-    const raw = fs.readFileSync(DATA_FILE, 'utf8');
+    const raw = fs.readFileSync(DATA_FILE, "utf8");
     try {
       return JSON.parse(raw);
     } catch (error) {
-      console.error('Error parsing data file:', error);
+      console.error("Error parsing data file:", error);
       return { emails: [], groups: [] };
     }
   }
@@ -75,29 +65,21 @@ function loadData() {
 
 function saveData(data) {
   try {
-    fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2), 'utf8');
+    fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2), "utf8");
   } catch (error) {
-    console.error('Error saving data:', error);
+    console.error("Error saving data:", error);
   }
 }
 
 // Authentication middleware
-const requireAuth = (req, res, next) => {
-  if (!req.session.user) {
-    return res.status(401).json({ success: false, error: "غير مصرح، يرجى تسجيل الدخول" });
-  }
-  next();
-};
-
-// Login endpoint
-app.post("/api/login", async (req, res) => {
-  const { email, password } = req.body;
+const requireAuth = async (req, res, next) => {
+  const email = req.headers["x-email"];
+  const password = req.headers["x-password"] || req.body.email;
 
   if (!email || !password) {
-    return res.status(400).json({ success: false, error: "البريد الإلكتروني وكلمة المرور مطلوبان" });
+    return res.status(401).json({ success: false, error: "البريد الإلكتروني وكلمة المرور مطلوبان" });
   }
 
-  // Create a temporary transporter to verify credentials
   const tempTransporter = nodemailer.createTransport({
     service: "gmail",
     auth: {
@@ -108,55 +90,37 @@ app.post("/api/login", async (req, res) => {
 
   try {
     await tempTransporter.verify();
-    req.session.user = { email, password };
+    req.user = { email, password };
+    next();
+  } catch (error) {
+    console.error("Authentication error:", error);
+    res.status(401).json({ success: false, error: "فشل التحقق من بيانات الاعتماد: " + error.message });
+  }
+};
+
+// Login endpoint
+app.post("/api/login", async (req, res) => {
+  const { email, password } = req.body;
+
+  if (!email || !password) {
+    return res.status(400).json({ success: false, error: "البريد الإلكتروني وكلمة المرور مطلوبان" });
+  }
+
+  const tempTransporter = nodemailer.createTransport({
+    service: "gmail",
+    auth: {
+      user: email,
+      pass: password,
+    },
+  });
+
+  try {
+    await tempTransporter.verify();
     res.json({ success: true, message: "تسجيل الدخول ناجح" });
   } catch (error) {
     console.error("Login error:", error);
     res.status(401).json({ success: false, error: "فشل تسجيل الدخول: بيانات غير صحيحة" });
   }
-});
-
-// Logout endpoint
-app.post("/api/logout", (req, res) => {
-  req.session.destroy((err) => {
-    if (err) {
-      console.error("Logout error:", err);
-      return res.status(500).json({ success: false, error: "فشل تسجيل الخروج" });
-    }
-    res.json({ success: true, message: "تم تسجيل الخروج بنجاح" });
-  });
-});
-
-// Configure multer for file uploads
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, "Uploads/");
-  },
-  filename: (req, file, cb) => {
-    const uniqueName = `${Date.now()}-${Math.random()
-      .toString(36)
-      .substr(2, 9)}-${file.originalname}`;
-    cb(null, uniqueName);
-  },
-});
-
-const upload = multer({
-  storage,
-  limits: {
-    fileSize: 50 * 1024 * 1024,
-  },
-  fileFilter: (req, file, cb) => {
-    const allowedTypes = [
-      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      'application/vnd.ms-excel',
-      'text/csv'
-    ];
-    if (allowedTypes.includes(file.mimetype)) {
-      cb(null, true);
-    } else {
-      cb(new Error('يجب أن يكون الملف من نوع Excel (.xlsx, .xls) أو CSV (.csv)'));
-    }
-  },
 });
 
 // Create nodemailer transporter dynamically
@@ -178,7 +142,7 @@ const createTransporter = (email, password) => {
 // Test email configuration
 app.get("/api/test-email", requireAuth, async (req, res) => {
   try {
-    const { email, password } = req.session.user;
+    const { email, password } = req.user;
     const transporter = createTransporter(email, password);
     await transporter.verify();
     res.json({ success: true, message: "إعدادات الإيميل جاهزة" });
@@ -194,14 +158,14 @@ const parseFile = async (filePath, fileExtension) => {
     const emails = [];
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-    if (fileExtension === '.csv') {
+    if (fileExtension === ".csv") {
       const parser = fs
         .createReadStream(filePath)
-        .pipe(parse({ delimiter: ',', columns: true, trim: true }));
+        .pipe(parse({ delimiter: ",", columns: true, trim: true }));
 
       for await (const record of parser) {
         Object.values(record).forEach((value) => {
-          if (typeof value === 'string' && emailRegex.test(value.trim()) && !emails.includes(value.trim())) {
+          if (typeof value === "string" && emailRegex.test(value.trim()) && !emails.includes(value.trim())) {
             emails.push(value.trim());
           }
         });
@@ -493,7 +457,7 @@ app.post("/api/send-emails", requireAuth, async (req, res) => {
 
     console.log(`Processing ${attachments.length} attachments...`);
 
-    const results = await sendBulkEmails(validEmails, subject, content, attachments, req.session.user);
+    const results = await sendBulkEmails(validEmails, subject, content, attachments, req.user);
 
     attachments.forEach((attachment) => {
       try {
@@ -532,7 +496,7 @@ app.post("/api/send-emails", requireAuth, async (req, res) => {
 app.post("/api/send-single-email", requireAuth, async (req, res) => {
   try {
     const { to, subject, content } = req.body;
-    const { email, password } = req.session.user;
+    const { email, password } = req.user;
 
     if (!to || !subject) {
       return res.json({ success: false, error: "البيانات المطلوبة مفقودة" });
