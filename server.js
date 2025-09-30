@@ -73,13 +73,11 @@ function saveData(data) {
 
 // Authentication middleware
 const requireAuth = async (req, res, next) => {
-  const email = req.headers["x-email"];
-  const password = req.headers["x-password"] || req.body.email;
-
+  const email = req.headers["x-email"] || req.body.email;
+  const password = req.headers["x-password"] || req.body.password; // Fixed: Use req.body.password
   if (!email || !password) {
     return res.status(401).json({ success: false, error: "البريد الإلكتروني وكلمة المرور مطلوبان" });
   }
-
   const tempTransporter = nodemailer.createTransport({
     service: "gmail",
     auth: {
@@ -87,7 +85,6 @@ const requireAuth = async (req, res, next) => {
       pass: password,
     },
   });
-
   try {
     await tempTransporter.verify();
     req.user = { email, password };
@@ -101,11 +98,9 @@ const requireAuth = async (req, res, next) => {
 // Login endpoint
 app.post("/api/login", async (req, res) => {
   const { email, password } = req.body;
-
   if (!email || !password) {
     return res.status(400).json({ success: false, error: "البريد الإلكتروني وكلمة المرور مطلوبان" });
   }
-
   const tempTransporter = nodemailer.createTransport({
     service: "gmail",
     auth: {
@@ -113,12 +108,12 @@ app.post("/api/login", async (req, res) => {
       pass: password,
     },
   });
-
   try {
     await tempTransporter.verify();
+    console.log("Login successful for:", email); // Debug log
     res.json({ success: true, message: "تسجيل الدخول ناجح" });
   } catch (error) {
-    console.error("Login error:", error);
+    console.error("Login error for:", email, error); // Debug log
     res.status(401).json({ success: false, error: "فشل تسجيل الدخول: بيانات غير صحيحة" });
   }
 });
@@ -157,12 +152,10 @@ const parseFile = async (filePath, fileExtension) => {
   try {
     const emails = [];
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
     if (fileExtension === ".csv") {
       const parser = fs
         .createReadStream(filePath)
         .pipe(parse({ delimiter: ",", columns: true, trim: true }));
-
       for await (const record of parser) {
         Object.values(record).forEach((value) => {
           if (typeof value === "string" && emailRegex.test(value.trim()) && !emails.includes(value.trim())) {
@@ -175,12 +168,9 @@ const parseFile = async (filePath, fileExtension) => {
       workbook.SheetNames.forEach((sheetName) => {
         const worksheet = workbook.Sheets[sheetName];
         const data = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
-
         if (data.length === 0) return;
-
         const headers = data[0] || [];
         const emailColumnIndices = [];
-
         headers.forEach((header, index) => {
           if (header && typeof header === "string") {
             const headerLower = header.toLowerCase().trim();
@@ -197,13 +187,11 @@ const parseFile = async (filePath, fileExtension) => {
               "البريد الالكتروني",
               "البريد الإلكتروني",
             ];
-
             if (emailKeywords.some((keyword) => headerLower.includes(keyword.toLowerCase()))) {
               emailColumnIndices.push(index);
             }
           }
         });
-
         if (emailColumnIndices.length === 0) {
           for (let colIndex = 0; colIndex < headers.length; colIndex++) {
             for (let rowIndex = 1; rowIndex < Math.min(data.length, 10); rowIndex++) {
@@ -219,7 +207,6 @@ const parseFile = async (filePath, fileExtension) => {
             }
           }
         }
-
         data.slice(1).forEach((row) => {
           emailColumnIndices.forEach((colIndex) => {
             const cellValue = row[colIndex];
@@ -233,7 +220,6 @@ const parseFile = async (filePath, fileExtension) => {
         });
       });
     }
-
     return { success: true, emails, count: emails.length };
   } catch (error) {
     console.error("File parsing error:", error);
@@ -247,34 +233,27 @@ app.post("/api/upload-file", requireAuth, (req, res) => {
     if (!req.files || !req.files.file) {
       return res.json({ success: false, error: "لم يتم العثور على ملف" });
     }
-
     const uploadedFile = req.files.file;
     const allowedExtensions = [".xlsx", ".xls", ".csv"];
     const fileExtension = path.extname(uploadedFile.name).toLowerCase();
-
     if (!allowedExtensions.includes(fileExtension)) {
       return res.json({ success: false, error: "يجب أن يكون الملف من نوع Excel (.xlsx, .xls) أو CSV (.csv)" });
     }
-
     const fileName = `file_${Date.now()}_${Math.random()
       .toString(36)
       .substr(2, 9)}${fileExtension}`;
     const filePath = path.join(tempDir, fileName);
-
     uploadedFile.mv(filePath, async (err) => {
       if (err) {
         console.error("File upload error:", err);
         return res.json({ success: false, error: "فشل في رفع الملف: " + err.message });
       }
-
       const result = await parseFile(filePath, fileExtension);
-
       try {
         fs.unlinkSync(filePath);
       } catch (deleteError) {
         console.warn("Could not delete temporary file:", deleteError);
       }
-
       if (result.success) {
         if (result.emails.length === 0) {
           return res.json({ success: false, error: "لم يتم العثور على إيميلات صالحة في الملف" });
@@ -297,12 +276,9 @@ const sendBulkEmails = async (emailList, subject, content, attachments, userCred
     failed: 0,
     errors: [],
   };
-
   const batchSize = 10;
   const delay = 1000;
-
   const transporter = createTransporter(userCredentials.email, userCredentials.password);
-
   for (let i = 0; i < emailList.length; i += batchSize) {
     const batch = emailList.slice(i, i + batchSize);
     const batchPromises = batch.map(async (email) => {
@@ -369,28 +345,22 @@ const sendBulkEmails = async (emailList, subject, content, attachments, userCred
           `,
           attachments: attachments,
         };
-
         const info = await transporter.sendMail(mailOptions);
         console.log(`Email sent to ${email}:`, info.messageId);
         results.successful++;
-
         return { email, success: true, messageId: info.messageId };
       } catch (error) {
         console.error(`Failed to send email to ${email}:`, error.message);
         results.failed++;
         results.errors.push({ email, error: error.message });
-
         return { email, success: false, error: error.message };
       }
     });
-
     await Promise.all(batchPromises);
-
     if (i + batchSize < emailList.length) {
       await new Promise((resolve) => setTimeout(resolve, delay));
     }
   }
-
   return results;
 };
 
@@ -399,28 +369,22 @@ app.post("/api/send-emails", requireAuth, async (req, res) => {
   try {
     const { subject, content, emails } = req.body;
     let emailList;
-
     try {
       emailList = JSON.parse(emails);
     } catch (parseError) {
       return res.json({ success: false, error: "خطأ في تحليل قائمة الإيميلات" });
     }
-
     if (!emailList || !Array.isArray(emailList) || emailList.length === 0) {
       return res.json({ success: false, error: "قائمة الإيميلات فارغة أو غير صالحة" });
     }
-
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     const validEmails = emailList.filter((email) =>
       typeof email === "string" && emailRegex.test(email.trim())
     );
-
     if (validEmails.length === 0) {
       return res.json({ success: false, error: "لا توجد إيميلات صالحة في القائمة" });
     }
-
     console.log(`Preparing to send ${validEmails.length} emails...`);
-
     const attachments = [];
     if (req.files) {
       const attachmentPromises = Object.keys(req.files)
@@ -431,7 +395,6 @@ app.post("/api/send-emails", requireAuth, async (req, res) => {
             .toString(36)
             .substr(2, 9)}_${file.name}`;
           const filePath = path.join(uploadsDir, fileName);
-
           try {
             await new Promise((resolve, reject) => {
               file.mv(filePath, (err) => {
@@ -439,7 +402,6 @@ app.post("/api/send-emails", requireAuth, async (req, res) => {
                 else resolve();
               });
             });
-
             return {
               filename: file.name,
               path: filePath,
@@ -450,15 +412,11 @@ app.post("/api/send-emails", requireAuth, async (req, res) => {
             return null;
           }
         });
-
       const processedAttachments = await Promise.all(attachmentPromises);
       attachments.push(...processedAttachments.filter(Boolean));
     }
-
     console.log(`Processing ${attachments.length} attachments...`);
-
     const results = await sendBulkEmails(validEmails, subject, content, attachments, req.user);
-
     attachments.forEach((attachment) => {
       try {
         if (fs.existsSync(attachment.path)) {
@@ -468,9 +426,7 @@ app.post("/api/send-emails", requireAuth, async (req, res) => {
         console.warn("Could not delete attachment file:", cleanupError);
       }
     });
-
     console.log("Email sending completed:", results);
-
     if (results.successful > 0) {
       res.json({
         success: true,
@@ -497,16 +453,13 @@ app.post("/api/send-single-email", requireAuth, async (req, res) => {
   try {
     const { to, subject, content } = req.body;
     const { email, password } = req.user;
-
     if (!to || !subject) {
       return res.json({ success: false, error: "البيانات المطلوبة مفقودة" });
     }
-
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(to)) {
       return res.json({ success: false, error: "عنوان الإيميل غير صالح" });
     }
-
     const transporter = createTransporter(email, password);
     const mailOptions = {
       from: {
@@ -570,7 +523,6 @@ app.post("/api/send-single-email", requireAuth, async (req, res) => {
         </html>
       `,
     };
-
     const info = await transporter.sendMail(mailOptions);
     console.log("Single email sent:", info.messageId);
     res.json({ success: true, message: "تم إرسال الرسالة بنجاح", messageId: info.messageId });
@@ -592,6 +544,7 @@ app.get("/api/health", (req, res) => {
 
 // Get server status
 app.get("/api/status", requireAuth, (req, res) => {
+  console.log("Status check for:", req.user.email); // Debug log
   res.json({
     success: true,
     server: "Professional Email Sender API",
@@ -638,16 +591,13 @@ app.post("/api/clear-data", requireAuth, (req, res) => {
 const cleanupOldFiles = () => {
   const directories = [uploadsDir, tempDir];
   const maxAge = 24 * 60 * 60 * 1000;
-
   directories.forEach((dir) => {
     try {
       if (!fs.existsSync(dir)) return;
-
       const files = fs.readdirSync(dir);
       files.forEach((file) => {
         const filePath = path.join(dir, file);
         const stats = fs.statSync(filePath);
-
         if (Date.now() - stats.mtime.getTime() > maxAge) {
           fs.unlinkSync(filePath);
           console.log(`Cleaned up old file: ${file}`);
@@ -700,7 +650,6 @@ const server = app.listen(PORT, () => {
 // Graceful shutdown
 const gracefulShutdown = (signal) => {
   console.log(`\n🛑 ${signal} received. Shutting down Professional Email Sender Server...`);
-
   server.close(() => {
     console.log("✅ HTTP server closed.");
     cleanupOldFiles();
@@ -708,7 +657,6 @@ const gracefulShutdown = (signal) => {
     console.log("👋 Server shutdown complete.");
     process.exit(0);
   });
-
   setTimeout(() => {
     console.log("❌ Forcing server shutdown...");
     process.exit(1);
