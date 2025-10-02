@@ -12,7 +12,7 @@ const app = express()
 const PORT = 3001
 
 const EMAIL_USER = "mohammedyasser2019b@gmail.com"
-const EMAIL_PASSWORD = "scbgaxacfbkyylxg"
+const EMAIL_PASSWORD = "scbg axac fbky ylxg"
 
 // CORS Configuration
 app.use(
