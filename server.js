@@ -12,7 +12,7 @@ const app = express()
 const PORT = 3001
 
 const EMAIL_USER = "mohammedyasser2019b@gmail.com"
-const EMAIL_PASSWORD = "scbg axac fbky ylxg"
+const EMAIL_PASSWORD = "scbgaxacfbkyylxg"
 
 // CORS Configuration
 app.use(
@@ -363,17 +363,23 @@ const sendBulkEmails = async (emailList, subject, content, attachments) => {
 }
 
 app.post("/api/send-emails", async (req, res) => {
+  console.log("[v0] Received send-emails request")
   try {
     const { subject, content, emails } = req.body
+    console.log("[v0] Request body:", { subject, content, emailsLength: emails?.length })
+
     let emailList
 
     try {
       emailList = JSON.parse(emails)
+      console.log("[v0] Parsed email list:", emailList.length, "emails")
     } catch (parseError) {
+      console.error("[v0] Parse error:", parseError)
       return res.json({ success: false, error: "خطأ في تحليل قائمة الإيميلات" })
     }
 
     if (!emailList || !Array.isArray(emailList) || emailList.length === 0) {
+      console.error("[v0] Invalid email list")
       return res.json({ success: false, error: "قائمة الإيميلات فارغة أو غير صالحة" })
     }
 
@@ -381,13 +387,27 @@ app.post("/api/send-emails", async (req, res) => {
     const validEmails = emailList.filter((email) => typeof email === "string" && emailRegex.test(email.trim()))
 
     if (validEmails.length === 0) {
+      console.error("[v0] No valid emails found")
       return res.json({ success: false, error: "لا توجد إيميلات صالحة في القائمة" })
     }
 
-    console.log(`Preparing to send ${validEmails.length} emails...`)
+    console.log(`[v0] Preparing to send ${validEmails.length} emails...`)
+
+    try {
+      const testTransporter = createTransporter()
+      await testTransporter.verify()
+      console.log("[v0] Email configuration verified successfully")
+    } catch (verifyError) {
+      console.error("[v0] Email verification failed:", verifyError)
+      return res.json({
+        success: false,
+        error: "فشل في التحقق من إعدادات الإيميل. تأكد من صحة كلمة المرور: " + verifyError.message,
+      })
+    }
 
     const attachments = []
     if (req.files) {
+      console.log("[v0] Processing attachments...")
       const attachmentPromises = Object.keys(req.files)
         .filter((key) => key.startsWith("attachment"))
         .map(async (key) => {
@@ -409,17 +429,17 @@ app.post("/api/send-emails", async (req, res) => {
               contentType: file.mimetype,
             }
           } catch (error) {
-            console.error("Attachment processing error:", error)
+            console.error("[v0] Attachment processing error:", error)
             return null
           }
         })
 
       const processedAttachments = await Promise.all(attachmentPromises)
       attachments.push(...processedAttachments.filter(Boolean))
+      console.log(`[v0] Processed ${attachments.length} attachments`)
     }
 
-    console.log(`Processing ${attachments.length} attachments...`)
-
+    console.log(`[v0] Starting bulk email send...`)
     const results = await sendBulkEmails(validEmails, subject, content, attachments)
 
     attachments.forEach((attachment) => {
@@ -428,11 +448,11 @@ app.post("/api/send-emails", async (req, res) => {
           fs.unlinkSync(attachment.path)
         }
       } catch (cleanupError) {
-        console.warn("Could not delete attachment file:", cleanupError)
+        console.warn("[v0] Could not delete attachment file:", cleanupError)
       }
     })
 
-    console.log("Email sending completed:", results)
+    console.log("[v0] Email sending completed:", results)
 
     if (results.successful > 0) {
       res.json({
@@ -450,7 +470,7 @@ app.post("/api/send-emails", async (req, res) => {
       })
     }
   } catch (error) {
-    console.error("Send emails error:", error)
+    console.error("[v0] Send emails error:", error)
     res.json({ success: false, error: "خطأ في إرسال الرسائل: " + error.message })
   }
 })
