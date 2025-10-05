@@ -73,6 +73,8 @@ function saveData(data) {
 const createTransporter = () => {
   return nodemailer.createTransport({
     service: "gmail",
+    port: 465,
+    secure: true,
     auth: {
       user: EMAIL_USER,
       pass: EMAIL_PASSWORD,
